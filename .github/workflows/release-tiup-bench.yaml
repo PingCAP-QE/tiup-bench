@@ -55,7 +55,7 @@ jobs:
       - name: Check out code into the Go module directory
         uses: actions/checkout@v3
         with:
-          ref: ${{ github.event.inputs.git-ref || github.event.pull_request.head.sha }}
+          ref: ${{ inputs.git-ref || github.event.pull_request.head.sha }}
           path: go/src/github.com/${{ github.repository }}
           fetch-depth: 0
 
@@ -70,7 +70,7 @@ jobs:
       - name: Check if this is a nightly build
         id: check_nightly
         working-directory: ${{ env.working-directory }}
-        if: github.event.inputs.nightly # || github.event_name == 'schedule'
+        if: inputs.nightly # || github.event_name == 'schedule'
         run: |
           echo ::set-output name=NIGHTLY::YES
 
