@@ -11,7 +11,7 @@ targets:
 	| sort \
 	| xargs -I _ sh -c 'printf "%-30s " _; make _ -nB | (grep "^# Target:" || echo "") | tail -1 | sed "s/^# Target: //g"'
 
-REPO    := github.com/pingcap/tiup
+REPO    := github.com/PingCAP-QE/tiup-bench
 
 GOOS    := $(if $(GOOS),$(GOOS),$(shell go env GOOS))
 GOARCH  := $(if $(GOARCH),$(GOARCH),$(shell go env GOARCH))
@@ -37,11 +37,8 @@ default: check build
 	@# Target: run the checks and then build.
 
 # Build components
-build: components
-	@# Target: build tiup and all it's components
-
-components: bench
-	@# Target: build the playground, client, cluster, dm, bench and server components
+build: bench
+	@# Target: build tiup-bench
 
 bench:
 	@# Target: build the tiup-bench component
@@ -50,11 +47,11 @@ bench:
 check: fmt lint tidy check-static vet
 	@# Target: run all checkers. (fmt, lint, tidy, check-static and vet)
 
-check-static:
+check-static: tools/bin/golangci-lint
 	@# Target: run the golangci-lint static check tool
 	tools/bin/golangci-lint run --config tools/check/golangci.yaml ./... --deadline=3m --fix
 
-lint:
+lint: tools/bin/revive
 	@# Target: run the lint checker revive
 	@echo "linting"
 	tools/check/check-lint.sh
@@ -80,3 +77,11 @@ fmt:
 	@echo "goimports (if installed)"
 	$(shell goimports -w $(FILES) 2>/dev/null)
 
+tools/bin/revive: tools/check/go.mod
+	@# Target: build revive utility
+	cd tools/check; \
+	$(GO) build -o ../bin/revive github.com/mgechev/revive
+
+tools/bin/golangci-lint:
+	@# Target: pull in specific version of golangci-lint (v1.42.1)
+	curl -sfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b ./tools/bin v1.49.0
