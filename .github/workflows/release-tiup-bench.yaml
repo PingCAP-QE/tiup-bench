@@ -70,7 +70,7 @@ jobs:
       - name: Check if this is a nightly build
         id: check_nightly
         working-directory: ${{ env.working-directory }}
-        if: inputs.nightly # || github.event_name == 'schedule'
+        if: inputs.nightly || github.event_name == 'schedule'
         run: |
           echo ::set-output name=NIGHTLY::YES
 
