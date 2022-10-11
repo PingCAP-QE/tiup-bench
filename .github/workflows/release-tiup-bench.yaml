@@ -21,6 +21,12 @@ on:
       git-ref:
         description: git ref
         required: true
+      nightly:
+        description: nightly build
+        required: false
+        type: boolean
+  schedule:
+    - cron: '0 0 * * *'
 
 jobs:
   release:
@@ -61,6 +67,13 @@ jobs:
           STAGING_VER=`git describe --tags | sed -r "s/([^-]*-g)/r\1/"`
           echo ::set-output name=STAGING::$STAGING_VER
 
+      - name: Check if this is a nightly build
+        id: check_nightly
+        working-directory: ${{ env.working-directory }}
+        if: github.event.inputs.nightly # || github.event_name == 'schedule'
+        run: |
+          echo ::set-output name=NIGHTLY::YES
+
       - name: Get git ref and commit
         id: get_git
         working-directory: ${{ env.working-directory }}
@@ -93,6 +106,9 @@ jobs:
             export REL_VER=${{ steps.check_staging.outputs.STAGING }}+staging
           else
             export REL_VER=`git describe --tags --always`
+          fi
+          if [ '${{ steps.check_nightly.outputs.NIGHTLY }}' == 'YES' ]; then
+            export REL_VER=nightly
           fi
           echo ::set-output name=REL_VER::$REL_VER
 
