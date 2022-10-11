@@ -1,0 +1,29 @@
+linters-settings:
+  govet:
+    enable:
+      - nilness
+  errcheck:
+    exclude-functions:
+      - (*mime/multipart.Form).RemoveAll
+
+linters:
+  disable-all: true
+  enable:
+    - bodyclose
+    - errcheck
+    - gofmt
+    - goimports
+    - gosimple
+    - govet
+    - ineffassign
+    - interfacer
+    - misspell
+    - rowserrcheck
+    - staticcheck
+    - typecheck
+    - unconvert
+    - unused
+    - whitespace
+    - gocritic
+    # - goconst
+    # - gocyclo
