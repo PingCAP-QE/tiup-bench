@@ -108,7 +108,7 @@ jobs:
             export REL_VER=`git describe --tags --always`
           fi
           if [ '${{ steps.check_nightly.outputs.NIGHTLY }}' == 'YES' ]; then
-            export REL_VER=nightly
+            export REL_VER=nightly-$(date +%Y%m%d)
           fi
           echo ::set-output name=REL_VER::$REL_VER
 
