@@ -124,7 +124,7 @@ jobs:
           b2sum bin/* >> ${checksum_file}
           cat ${checksum_file}
 
-      - name: Package components
+      - name: Package component
         id: packaging
         working-directory: ${{ env.working-directory }}
         env:
@@ -151,7 +151,7 @@ jobs:
           # tiup-ctl is destributed with other components, so not packaging / publishing here
           ${TAR} -C bin -czf tiup-bench-${REL_VER}-${ARCH}.tar.gz tiup-bench
 
-      - name: Publish packages
+      - name: Publish package
         working-directory: ${{ env.working-directory }}
         env:
           TIUP_MIRRORS: ${{ secrets.TIUP_SERVER_STAGING }}
@@ -175,7 +175,7 @@ jobs:
           sleep $[ ( $RANDOM % 10 ) ]s
           ${TIUP_BIN} mirror publish bench ${REL_VER} tiup-bench-${REL_VER}-${ARCH}.tar.gz tiup-bench --arch ${{ matrix.arch }} --os ${{ matrix.os }} --desc="${bench_desc}"
 
-      - name: Upload the all-in-one tarball to GitHub release
+      - name: Upload the tarball to GitHub release
         uses: ncipollo/release-action@v1
         if: github.event_name == 'release'
         with:
