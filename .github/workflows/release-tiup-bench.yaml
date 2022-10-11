@@ -137,7 +137,6 @@ jobs:
 
       - name: Publish packages
         working-directory: ${{ env.working-directory }}
-        if: github.event_name == 'release'
         env:
           TIUP_MIRRORS: ${{ secrets.TIUP_SERVER_STAGING }}
           TIUP_HOME: ${{ steps.packaging.outputs.TIUP_HOME }}
