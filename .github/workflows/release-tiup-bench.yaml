@@ -27,7 +27,6 @@ on:
         type: boolean
   schedule:
     - cron: '0 0 * * *'
-    - cron: '0/15 * * * *' # debug
 
 jobs:
   release:
