@@ -84,8 +84,6 @@ jobs:
           elif [[ $GITHUB_REF == refs/heads/* ]]; then
             echo ::set-output name=GIT_REF::${GITHUB_REF/refs\/heads\//}
           fi
-          COMMIT_TIMESTAMP=`git show --no-patch --no-notes --pretty='%aI'`
-          echo ::set-output name=COMMIT_TIMESTAMP::$COMMIT_TIMESTAMP
 
       - name: Build for ${{ matrix.os }}-${{ matrix.arch }}
         id: build_tiup_bench
@@ -112,7 +110,7 @@ jobs:
           fi
           echo ::set-output name=REL_VER::$REL_VER
 
-          BUILD_FLAGS='-trimpath -mod=readonly -modcacherw -buildvcs=false' make build && \
+          BUILD_FLAGS='-trimpath -mod=readonly -modcacherw -buildvcs=false' make package && \
           echo "Build success."
 
           checksum_file=checksum.${{ matrix.os }}-${{ matrix.arch }}.txt
@@ -124,8 +122,8 @@ jobs:
           b2sum bin/* >> ${checksum_file}
           cat ${checksum_file}
 
-      - name: Package component
-        id: packaging
+      - name: Set up tiup
+        id: init_tiup
         working-directory: ${{ env.working-directory }}
         env:
           ARCH: ${{ matrix.os }}-${{ matrix.arch }}
@@ -141,35 +139,27 @@ jobs:
           tar -zxf $TMP_DIR/tiup-linux-amd64.tar.gz -C $TIUP_HOME/bin && chmod 755 $TIUP_HOME/bin/tiup
           curl -s https://tiup-mirrors.pingcap.com/root.json -o $TIUP_HOME/bin/root.json
 
-          mkdir -p package
           cp $TIUP_HOME/bin/root.json bin/root.json
 
-          # make tar reproducible
-          TAR="tar --sort=name --mtime=${{ steps.get_git.outputs.COMMIT_TIMESTAMP }} --owner=0 --group=0 --numeric-owner"
-
-          # package tiup-bench component
-          # tiup-ctl is destributed with other components, so not packaging / publishing here
-          ${TAR} -C bin -czf tiup-bench-${REL_VER}-${ARCH}.tar.gz tiup-bench
-
-      - name: Publish package
-        working-directory: ${{ env.working-directory }}
-        env:
-          TIUP_MIRRORS: ${{ secrets.TIUP_SERVER_STAGING }}
-          TIUP_HOME: ${{ steps.packaging.outputs.TIUP_HOME }}
-          TIUP_BIN: ${{ steps.packaging.outputs.TIUP_BIN }}
-          REL_VER: ${{ steps.build_tiup_bench.outputs.REL_VER }}
-          ARCH: ${{ matrix.os }}-${{ matrix.arch }}
-          bench_desc: "Benchmark database with different workloads"
-        run: |
           if [ ! -z ${{ steps.check_staging.outputs.STAGING }} ]; then
             TIUP_MIRRORS=${{ secrets.TIUP_SERVER_STAGING }}
           else
             TIUP_MIRRORS=${{ secrets.TIUP_SERVER_PROD }}
           fi
-          ${TIUP_BIN} mirror set ${TIUP_MIRRORS}
+          $TIUP_HOME/bin/tiup mirror set ${TIUP_MIRRORS}
 
           echo ${{ secrets.TIUP_COMP_KEY_PINGCAP }} | base64 -d > $TIUP_HOME/keys/private.json
 
+      - name: Publish package
+        working-directory: ${{ env.working-directory }}
+        env:
+          TIUP_MIRRORS: ${{ secrets.TIUP_SERVER_STAGING }}
+          TIUP_HOME: ${{ steps.init_tiup.outputs.TIUP_HOME }}
+          TIUP_BIN: ${{ steps.init_tiup.outputs.TIUP_BIN }}
+          REL_VER: ${{ steps.build_tiup_bench.outputs.REL_VER }}
+          ARCH: ${{ matrix.os }}-${{ matrix.arch }}
+          bench_desc: "Benchmark database with different workloads"
+        run: |
           # add a random delay before actually publishing, this can help reduce manifest conflict
           # when there are multiple jobs running in parallel
           sleep $[ ( $RANDOM % 10 ) ]s
