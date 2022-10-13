@@ -28,8 +28,6 @@ COMMIT  := $(if $(COMMIT),$(COMMIT),$(_COMMIT))
 GITREF  := $(if $(GITREF),$(GITREF),$(_GITREF))
 
 LDFLAGS := -w -s
-LDFLAGS += -X "$(REPO)/pkg/version.GitHash=$(COMMIT)"
-LDFLAGS += -X "$(REPO)/pkg/version.GitRef=$(GITREF)"
 LDFLAGS += $(EXTRA_LDFLAGS)
 
 FILES   := $$(find . -name "*.go")
