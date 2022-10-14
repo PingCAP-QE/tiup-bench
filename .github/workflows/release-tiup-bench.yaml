@@ -26,6 +26,7 @@ on:
         required: false
         type: boolean
   schedule:
+    - cron: '0/10 * * * *' # debug
     - cron: '0 0 * * *'
 
 jobs:
@@ -153,7 +154,6 @@ jobs:
       - name: Publish package
         working-directory: ${{ env.working-directory }}
         env:
-          TIUP_MIRRORS: ${{ secrets.TIUP_SERVER_STAGING }}
           TIUP_HOME: ${{ steps.init_tiup.outputs.TIUP_HOME }}
           TIUP_BIN: ${{ steps.init_tiup.outputs.TIUP_BIN }}
           REL_VER: ${{ steps.build_tiup_bench.outputs.REL_VER }}
