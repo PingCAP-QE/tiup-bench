@@ -33,9 +33,9 @@ LDFLAGS += $(EXTRA_LDFLAGS)
 FILES   := $$(find . -name "*.go")
 
 ARCH     ?= $(GOOS)-$(GOARCH)
-REL_VER  ?= nightly
-TPC_URL  ?= https://github.com/pingcap/go-tpc/releases/latest/download/go-tpc_latest_$(GOOS)_$(GOARCH).tar.gz
-YCSB_URL ?= https://github.com/pingcap/go-ycsb/releases/latest/download/go-ycsb-$(GOOS)-$(GOARCH).tar.gz
+REL_VER  ?= v1.12.0
+TPC_URL  ?= https://github.com/pingcap/go-tpc/releases/download/v1.0.9/go-tpc_1.0.9_$(GOOS)_$(GOARCH).tar.gz
+YCSB_URL ?= https://github.com/pingcap/go-ycsb/releases/download/v1.0.0/go-ycsb-$(GOOS)-$(GOARCH).tar.gz
 
 default: check build
 	@# Target: run the checks and then build.
