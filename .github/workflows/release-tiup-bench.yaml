@@ -85,6 +85,29 @@ jobs:
             echo ::set-output name=GIT_REF::${GITHUB_REF/refs\/heads\//}
           fi
 
+      - name: Resolve latest dependencies
+        uses: actions/github-script@v6
+        id: deps
+        if: inputs.nightly || github.event_name == 'schedule'
+        env:
+          GOOS: ${{ matrix.os }}
+          GOARCH: ${{ matrix.arch }}
+        with:
+          script: |
+            async function resolveLatestURL(owner, repo, name, filter) {
+              const { data } = await github.rest.repos.getLatestRelease({ owner, repo });
+              const asset = data.assets.find(filter);
+              if (asset) {
+                core.setOutput(name, asset.browser_download_url);
+              } else {
+                core.setFailed(`Failed to resolve the latest build of ${owner}/${repo}`)
+              }
+            }
+
+            const { GOOS, GOARCH } = process.env;
+            await resolveLatestURL('pingcap', 'go-tpc', 'TPC_URL', a => a.name.includes(`${GOOS}_${GOARCH}.tar.gz`));
+            await resolveLatestURL('pingcap', 'go-ycsb', 'YCSB_URL', a => a.name.includes(`${GOOS}-${GOARCH}.tar.gz`));
+
       - name: Build for ${{ matrix.os }}-${{ matrix.arch }}
         id: build_tiup_bench
         working-directory: ${{ env.working-directory }}
@@ -93,6 +116,8 @@ jobs:
           GOARCH: ${{ matrix.arch }}
           COMMIT: ${GITHUB_SHA}
           GITREF: ${{ steps.get_git.outputs.GIT_REF }}
+          TPC_URL: ${{ steps.deps.outputs.TPC_URL }}
+          YCSB_URL: ${{ steps.deps.outputs.YCSB_URL }}
           actor: ${{ github.actor }}
           event: ${{ github.event_name }}
         run: |
