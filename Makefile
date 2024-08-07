@@ -59,7 +59,7 @@ check: fmt lint tidy check-static vet
 
 check-static: tools/bin/golangci-lint
 	@# Target: run the golangci-lint static check tool
-	tools/bin/golangci-lint run --config tools/check/golangci.yaml ./... --deadline=3m --fix
+	tools/bin/golangci-lint run --config tools/check/golangci.yaml ./... --timeout=3m --fix
 
 lint: tools/bin/revive
 	@# Target: run the lint checker revive
@@ -94,4 +94,4 @@ tools/bin/revive: tools/check/go.mod
 
 tools/bin/golangci-lint:
 	@# Target: pull in specific version of golangci-lint (v1.42.1)
-	curl -sfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b ./tools/bin v1.49.0
+	curl -sfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b ./tools/bin v1.59.1

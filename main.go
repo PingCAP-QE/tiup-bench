@@ -1,22 +1,48 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
-	"path"
+	"path/filepath"
 	"strings"
 )
 
 func bin(name string) string {
 	dir := os.Getenv("TIUP_COMPONENT_INSTALL_DIR")
 	if len(dir) == 0 {
-		dir = path.Dir(os.Args[0])
+		dir = filepath.Dir(os.Args[0])
 	}
-	return path.Join(dir, name)
+	return filepath.Join(dir, name)
 }
 
 func execute(bin string, args []string) error {
+	// Check if the binary is allowed.
+	if bin != "go-ycsb" && bin != "go-tpc" {
+		return errors.New("binary must be 'go-ycsb' or 'go-tpc'")
+	}
+
+	// Define forbidden characters.
+	forbiddenChars := ";|&<>()$\\"
+
+	// Function to check if a string contains any forbidden characters.
+	containsForbiddenChars := func(s string) bool {
+		for _, char := range forbiddenChars {
+			if strings.ContainsRune(s, char) {
+				return true
+			}
+		}
+		return false
+	}
+
+	// Check if any of the arguments contain forbidden characters.
+	for _, arg := range args {
+		if containsForbiddenChars(arg) {
+			return errors.New("arguments contain forbidden characters")
+		}
+	}
+
 	cmd := exec.Command(bin, args...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
