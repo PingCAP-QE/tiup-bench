@@ -20,7 +20,9 @@ GO      := $(GOENV) go
 GOBUILD := $(GO) build $(BUILD_FLAGS)
 GOTEST  := GO111MODULE=on CGO_ENABLED=1 go test -p 3
 SHELL   := /usr/bin/env bash
-TAR     := tar --sort=name --mtime=$(shell git show --no-patch --no-notes --pretty='%aI') --owner=0 --group=0 --numeric-owner
+# Use GNU tar (gtar on macOS) for reproducible release archives.
+TAR_BIN ?= $(shell command -v gtar 2>/dev/null || command -v tar)
+TAR     := $(TAR_BIN) --sort=name --mtime=$(shell git show --no-patch --no-notes --pretty='%aI') --owner=0 --group=0 --numeric-owner
 
 _COMMIT := $(shell git describe --no-match --always --dirty)
 _GITREF := $(shell git rev-parse --abbrev-ref HEAD)
@@ -34,8 +36,6 @@ FILES   := $$(find . -name "*.go")
 
 ARCH     ?= $(GOOS)-$(GOARCH)
 REL_VER  ?= nightly
-TPC_URL  ?= https://github.com/pingcap/go-tpc/releases/latest/download/go-tpc_latest_$(GOOS)_$(GOARCH).tar.gz
-YCSB_URL ?= https://github.com/pingcap/go-ycsb/releases/latest/download/go-ycsb-$(GOOS)-$(GOARCH).tar.gz
 
 default: check build
 	@# Target: run the checks and then build.
@@ -46,8 +46,7 @@ build: bench
 
 package: build
 	@# Target: package tiup-bench
-	curl -sL $(TPC_URL) | tar -xz -C bin
-	curl -sL $(YCSB_URL) | tar -xz -C bin
+	bash tools/release/download-dependencies.sh "$(GOOS)" "$(GOARCH)" bin
 	$(TAR) -C bin -zcf tiup-bench-$(REL_VER)-$(ARCH).tar.gz tiup-bench go-tpc go-ycsb
 
 bench:

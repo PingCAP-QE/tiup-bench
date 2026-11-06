@@ -2,201 +2,161 @@
 name: release-tiup-bench
 
 on:
-  push:
-    branches:
-      - ci/gh-*
-      - release-*
-    paths-ignore:
-      - '**.html'
-      - '**.md'
-      - 'CNAME'
-      - 'LICENSE'
-      - 'doc/**'
-      - 'embed/templates/examples/**'
   release:
-    types:
-      - published
-  workflow_dispatch:
-    inputs:
-      git-ref:
-        description: git ref
-        required: true
-      nightly:
-        description: nightly build
-        required: false
-        type: boolean
-  schedule:
-    - cron: '0 0 * * *'
+    types: [published]
+
+permissions: {}
+
+defaults:
+  run:
+    shell: bash
 
 jobs:
-  release:
+  build:
+    if: >-
+      github.event_name == 'release' && github.event.action == 'published' &&
+      !github.event.release.prerelease && !github.event.release.draft &&
+      startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    outputs:
-      REL_VER: ${{ steps.build_tiup.outputs.REL_VER }}
+    permissions:
+      contents: read
     strategy:
       fail-fast: true
       matrix:
-        os:
-          - "linux"
-          - "darwin"
-        arch:
-          - "amd64"
-          - "arm64"
+        os: [linux, darwin]
+        arch: [amd64, arm64]
     env:
-      working-directory: ${{ github.workspace }}/go/src/github.com/${{ github.repository }}
+      REL_VER: ${{ github.event.release.tag_name }}
+      GOOS: ${{ matrix.os }}
+      GOARCH: ${{ matrix.arch }}
     steps:
-      - name: Set up Go 1.19
-        uses: actions/setup-go@v2
+      - name: Validate release tag
+        run: |
+          [[ "$REL_VER" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
+          [[ "$GITHUB_REF" == "refs/tags/$REL_VER" ]]
+
+      - name: Check out the event commit
+        uses: actions/checkout@v4
         with:
-          go-version: 1.19.x
-        id: go
+          ref: ${{ github.sha }}
+          persist-credentials: false
 
-      - name: Check out code into the Go module directory
-        uses: actions/checkout@v3
+      - name: Set up Go
+        uses: actions/setup-go@v5
         with:
-          ref: ${{ inputs.git-ref || github.event.pull_request.head.sha }}
-          path: go/src/github.com/${{ github.repository }}
-          fetch-depth: 0
+          go-version: '1.19.x'
+          cache: false
 
-      - name: Check if this is a staging build
-        id: check_staging
-        working-directory: ${{ env.working-directory }}
-        if: github.event_name != 'release' && github.event_name != 'schedule'
-        run: |
-          STAGING_VER=`git describe --tags | sed -r "s/([^-]*-g)/r\1/"`
-          echo ::set-output name=STAGING::$STAGING_VER
-
-      - name: Check if this is a nightly build
-        id: check_nightly
-        working-directory: ${{ env.working-directory }}
-        if: inputs.nightly || github.event_name == 'schedule'
-        run: |
-          echo ::set-output name=NIGHTLY::YES
-
-      - name: Get git ref and commit
-        id: get_git
-        working-directory: ${{ env.working-directory }}
-        # when empty, it will be determined by Makefile
-        run: |
-          if [[ $GITHUB_REF == refs/tags/* ]]; then
-            echo ::set-output name=GIT_REF::${GITHUB_REF/refs\/tags\//}
-          elif [[ $GITHUB_REF == refs/heads/* ]]; then
-            echo ::set-output name=GIT_REF::${GITHUB_REF/refs\/heads\//}
-          fi
-
-      - name: Resolve latest dependencies
-        uses: actions/github-script@v6
-        id: deps
-        if: inputs.nightly || github.event_name == 'schedule'
+      - name: Build and checksum package
         env:
-          GOOS: ${{ matrix.os }}
-          GOARCH: ${{ matrix.arch }}
+          BUILD_FLAGS: -trimpath -mod=readonly -modcacherw -buildvcs=false
+        run: |
+          make package
+          archive="tiup-bench-${REL_VER}-${GOOS}-${GOARCH}.tar.gz"
+          mkdir dist
+          mv "$archive" dist/
+          (cd dist && sha256sum "$archive" > "$archive.sha256")
+
+      - name: Upload this run's package
+        uses: actions/upload-artifact@v4
         with:
-          script: |
-            async function resolveLatestURL(owner, repo, name, filter) {
-              const { data } = await github.rest.repos.getLatestRelease({ owner, repo });
-              const asset = data.assets.find(filter);
-              if (asset) {
-                core.setOutput(name, asset.browser_download_url);
-              } else {
-                core.setFailed(`Failed to resolve the latest build of ${owner}/${repo}`)
-              }
-            }
+          name: bench-${{ github.run_attempt }}-${{ matrix.os }}-${{ matrix.arch }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
 
-            const { GOOS, GOARCH } = process.env;
-            await resolveLatestURL('pingcap', 'go-tpc', 'TPC_URL', a => a.name.includes(`${GOOS}_${GOARCH}.tar.gz`));
-            await resolveLatestURL('pingcap', 'go-ycsb', 'YCSB_URL', a => a.name.includes(`${GOOS}-${GOARCH}.tar.gz`));
-
-      - name: Build for ${{ matrix.os }}-${{ matrix.arch }}
-        id: build_tiup_bench
-        working-directory: ${{ env.working-directory }}
-        env:
-          GOOS: ${{ matrix.os }}
-          GOARCH: ${{ matrix.arch }}
-          COMMIT: ${GITHUB_SHA}
-          GITREF: ${{ steps.get_git.outputs.GIT_REF }}
-          TPC_URL: ${{ steps.deps.outputs.TPC_URL }}
-          YCSB_URL: ${{ steps.deps.outputs.YCSB_URL }}
-          actor: ${{ github.actor }}
-          event: ${{ github.event_name }}
-        run: |
-          export GOPATH=${GITHUB_WORKSPACE}/go
-          export PATH=$PATH:$GOPATH/bin
-
-          if [ ! -z ${{ steps.check_staging.outputs.STAGING }} ]; then
-            export EXTRA_LDFLAGS="-X \"github.com/${{ github.repository }}/pkg/version.TiUPVerName=${{ steps.check_staging.outputs.STAGING }}\""
-            export REL_VER=${{ steps.check_staging.outputs.STAGING }}+staging
-          else
-            export REL_VER=`git describe --tags --always`
-          fi
-          if [ '${{ steps.check_nightly.outputs.NIGHTLY }}' == 'YES' ]; then
-            export REL_VER=nightly-$(date +%Y%m%d)
-          fi
-          echo ::set-output name=REL_VER::$REL_VER
-
-          BUILD_FLAGS='-trimpath -mod=readonly -modcacherw -buildvcs=false' make package && \
-          echo "Build success."
-
-          checksum_file=checksum.${{ matrix.os }}-${{ matrix.arch }}.txt
-          checksum_header="TiUP Bench $REL_VER (${actor}@${event}) ${{ github.run_id }}"
-          echo ${checksum_header} > ${checksum_file}
-          echo "sha256sum:" >> ${checksum_file}
-          sha256sum bin/* >> ${checksum_file}
-          echo "b2sum:" >> ${checksum_file}
-          b2sum bin/* >> ${checksum_file}
-          cat ${checksum_file}
-
-      - name: Set up tiup
-        id: init_tiup
-        working-directory: ${{ env.working-directory }}
-        env:
-          ARCH: ${{ matrix.os }}-${{ matrix.arch }}
-          REL_VER: ${{ steps.build_tiup_bench.outputs.REL_VER }}
-        run: |
-          TMP_DIR=`mktemp -d`
-          export TIUP_HOME="$TMP_DIR/home"
-          echo ::set-output name=TIUP_HOME::$TIUP_HOME
-          echo ::set-output name=TIUP_BIN::$TIUP_HOME/bin/tiup
-
-          rm -rf $TIUP_HOME && mkdir -p $TIUP_HOME/{bin,keys}
-          wget -O $TMP_DIR/tiup-linux-amd64.tar.gz -q https://tiup-mirrors.pingcap.com/tiup-linux-amd64.tar.gz
-          tar -zxf $TMP_DIR/tiup-linux-amd64.tar.gz -C $TIUP_HOME/bin && chmod 755 $TIUP_HOME/bin/tiup
-          curl -s https://tiup-mirrors.pingcap.com/root.json -o $TIUP_HOME/bin/root.json
-
-          cp $TIUP_HOME/bin/root.json bin/root.json
-
-          if [ ! -z ${{ steps.check_staging.outputs.STAGING }} ]; then
-            TIUP_MIRRORS=${{ secrets.TIUP_SERVER_STAGING }}
-          else
-            TIUP_MIRRORS=${{ secrets.TIUP_SERVER_PROD }}
-          fi
-          $TIUP_HOME/bin/tiup mirror set ${TIUP_MIRRORS}
-
-          echo ${{ secrets.TIUP_COMP_KEY_PINGCAP }} | base64 -d > $TIUP_HOME/keys/private.json
-
-      - name: Publish package
-        working-directory: ${{ env.working-directory }}
-        env:
-          TIUP_HOME: ${{ steps.init_tiup.outputs.TIUP_HOME }}
-          TIUP_BIN: ${{ steps.init_tiup.outputs.TIUP_BIN }}
-          REL_VER: ${{ steps.build_tiup_bench.outputs.REL_VER }}
-          ARCH: ${{ matrix.os }}-${{ matrix.arch }}
-          bench_desc: "Benchmark database with different workloads"
-        run: |
-          # add a random delay before actually publishing, this can help reduce manifest conflict
-          # when there are multiple jobs running in parallel
-          sleep $[ ( $RANDOM % 10 ) ]s
-          ${TIUP_BIN} mirror publish bench ${REL_VER} tiup-bench-${REL_VER}-${ARCH}.tar.gz tiup-bench --arch ${{ matrix.arch }} --os ${{ matrix.os }} --desc="${bench_desc}"
-
-      - name: Upload the tarball to GitHub release
-        uses: ncipollo/release-action@v1
-        if: github.event_name == 'release'
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # Configure reviewers and tag restrictions BEFORE enabling this workflow.
+    environment: tiup-production
+    concurrency:
+      group: tiup-production
+      cancel-in-progress: false
+    permissions:
+      contents: write # Attach the verified packages to this GitHub release.
+    env:
+      REL_VER: ${{ github.event.release.tag_name }}
+    steps:
+      # No checkout, repository scripts, or build output executables in this job.
+      - name: Download packages from this run and attempt
+        uses: actions/download-artifact@v4
         with:
-          allowUpdates: true
-          artifacts: ${{ env.working-directory }}/tiup-bench-${{ steps.build_tiup_bench.outputs.REL_VER }}-${{ matrix.os }}-${{ matrix.arch }}.tar.gz
-          artifactContentType: application/gzip
-          omitBodyDuringUpdate: true
-          omitNameDuringUpdate: true
-          prerelease: ${{ github.event.release.prerelease }}
-          token: ${{ secrets.GITHUB_TOKEN }}
+          pattern: bench-${{ github.run_attempt }}-*
+          path: packages
+          merge-multiple: true
+
+      - name: Verify all four packages before loading the key
+        working-directory: packages
+        run: |
+          shopt -s nullglob dotglob
+          files=(*)
+          [[ ${#files[@]} -eq 8 ]]
+          for target_os in linux darwin; do
+            for arch in amd64 arm64; do
+              archive="tiup-bench-${REL_VER}-${target_os}-${arch}.tar.gz"
+              [[ -f "$archive" && ! -L "$archive" ]]
+              [[ -f "$archive.sha256" && ! -L "$archive.sha256" ]]
+              sha256sum "$archive" | cmp - "$archive.sha256"
+            done
+          done
+
+      - name: Install the pinned and verified TiUP publisher
+        env:
+          TIUP_HOME: ${{ runner.temp }}/tiup-publisher
+          TIUP_SERVER_PROD: ${{ secrets.TIUP_SERVER_PROD }}
+        run: |
+          [[ -n "$TIUP_SERVER_PROD" ]] || { echo 'TIUP_SERVER_PROD is missing.' >&2; exit 1; }
+          umask 077
+          mkdir -p "$TIUP_HOME/bin" "$TIUP_HOME/keys"
+          archive="$RUNNER_TEMP/tiup-v1.17.1-linux-amd64.tar.gz"
+          curl -fsSL --retry 3 --proto '=https' --proto-redir '=https' \
+            https://github.com/pingcap/tiup/releases/download/v1.17.1/tiup-v1.17.1-linux-amd64.tar.gz \
+            -o "$archive"
+          printf '%s  %s\n' \
+            0b09de9892a19798115f45356a379891e85a950fa86008f8e4b0cf7257766d32 \
+            "$archive" | sha256sum -c -
+          tar -xzOf "$archive" bin/tiup > "$TIUP_HOME/bin/tiup"
+          tar -xzOf "$archive" bin/root.json > "$TIUP_HOME/trusted-root.json"
+          cp "$TIUP_HOME/trusted-root.json" "$TIUP_HOME/bin/root.json"
+          chmod 700 "$TIUP_HOME/bin/tiup"
+          # mirror set overwrites bin/root.json, so its input must be a separate file.
+          "$TIUP_HOME/bin/tiup" mirror set "$TIUP_SERVER_PROD" --root "$TIUP_HOME/trusted-root.json"
+
+      - name: Sign and publish packages sequentially
+        env:
+          TIUP_HOME: ${{ runner.temp }}/tiup-publisher
+          TIUP_SIGNING_KEY: ${{ secrets.TIUP_COMP_KEY_PINGCAP }}
+        run: |
+          set +x
+          umask 077
+          key="$TIUP_HOME/keys/private.json"
+          trap 'rm -f -- "$key"' EXIT
+          [[ -n "$TIUP_SIGNING_KEY" ]] || { echo 'Production signing key is missing.' >&2; exit 1; }
+          printf '%s' "$TIUP_SIGNING_KEY" | base64 --decode > "$key"
+          unset TIUP_SIGNING_KEY
+          [[ -s "$key" ]]
+          for target_os in linux darwin; do
+            for arch in amd64 arm64; do
+              "$TIUP_HOME/bin/tiup" mirror publish bench "$REL_VER" \
+                "packages/tiup-bench-${REL_VER}-${target_os}-${arch}.tar.gz" tiup-bench \
+                --os "$target_os" --arch "$arch" \
+                --desc 'Benchmark database with different workloads'
+            done
+          done
+
+      - name: Remove publisher and private key
+        if: always()
+        env:
+          TIUP_HOME: ${{ runner.temp }}/tiup-publisher
+        run: rm -rf -- "$TIUP_HOME"
+
+      - name: Attach verified packages to the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload "$REL_VER" packages/*.tar.gz packages/*.sha256 \
+            --repo "$GITHUB_REPOSITORY" --clobber
