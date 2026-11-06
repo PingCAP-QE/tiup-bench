@@ -1,0 +1,9 @@
+# go-tpc v1.0.12 and go-ycsb v1.0.3; see docs/releasing.md for provenance.
+83c1d23b93b87226523949ac81e8b048c315b7eb0831580226e906347e275ce7  go-tpc_1.0.12_darwin_amd64.tar.gz
+f93d57333dc7c513cfc93beddb15b8800dd91986ecebde544ec2fdd4d26e9a1f  go-tpc_1.0.12_darwin_arm64.tar.gz
+481f53dfc25bd97c4983f2ec7277fc907803739e3804cced22991c01d546fe6a  go-tpc_1.0.12_linux_amd64.tar.gz
+15d10cdcf27a60dc93899714dadfb3e7edf63f84611c710cf59e3d118abf6bf5  go-tpc_1.0.12_linux_arm64.tar.gz
+8eabb5320c6be85e4e9ca1b7e408cfa6853d6712276c7d1dde3bdd03039271d8  go-ycsb-darwin-amd64.tar.gz
+1c752fd2ade62d54b4277b5cdf7cd9a1be9cb9df467b6af4b1d5141861eba21c  go-ycsb-darwin-arm64.tar.gz
+453fff56c68f58dcb5d9ad8eec5124ad9b83bfcf0e51ce2bbcb854bf6425b47b  go-ycsb-linux-amd64.tar.gz
+5f0343eadf59e71b9651a2b29debb74a2a05c1208306047ca4ed633f85dfeabf  go-ycsb-linux-arm64.tar.gz
