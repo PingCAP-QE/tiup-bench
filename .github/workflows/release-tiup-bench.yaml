@@ -17,7 +17,7 @@ jobs:
       github.event_name == 'release' && github.event.action == 'published' &&
       !github.event.release.prerelease && !github.event.release.draft &&
       startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
       contents: read
@@ -45,7 +45,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
-          go-version: '1.26.x'
+          go-version: '1.19.x'
           cache: false
 
       - name: Build and checksum package
@@ -69,11 +69,7 @@ jobs:
 
   publish:
     needs: build
-    if: >-
-      github.event_name == 'release' && github.event.action == 'published' &&
-      !github.event.release.prerelease && !github.event.release.draft &&
-      startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     timeout-minutes: 30
     # Configure reviewers and tag restrictions BEFORE enabling this workflow.
     environment: tiup-production
@@ -84,29 +80,7 @@ jobs:
       contents: write # Attach the verified packages to this GitHub release.
     env:
       REL_VER: ${{ github.event.release.tag_name }}
-      RELEASE_CHANNEL: production
     steps:
-      - name: Require explicit production configuration
-        env:
-          PRODUCTION_READY: ${{ vars.TIUP_PRODUCTION_READY }}
-          PRODUCTION_MIRROR: ${{ vars.TIUP_PRODUCTION_MIRROR }}
-        run: |
-          [[ "$REL_VER" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
-          [[ "$GITHUB_REF" == "refs/tags/$REL_VER" ]]
-          case "$RELEASE_CHANNEL" in
-            production)
-              [[ "$PRODUCTION_READY" == true ]] || {
-                echo 'Configure the protected tiup-production Environment first.' >&2
-                exit 1
-              }
-              [[ "$PRODUCTION_MIRROR" =~ ^https://[^/[:space:]@]+(/[^[:space:]]*)?$ ]] || {
-                echo 'TIUP_PRODUCTION_MIRROR must be an explicit HTTPS mirror URL.' >&2
-                exit 1
-              }
-              ;;
-            *) echo 'Unsupported or empty release channel.' >&2; exit 1 ;;
-          esac
-
       # No checkout, repository scripts, or build output executables in this job.
       - name: Download packages from this run and attempt
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
@@ -116,34 +90,26 @@ jobs:
           merge-multiple: true
 
       - name: Verify all four packages before loading the key
+        working-directory: packages
         run: |
-          python3 - <<'PY'
-          import hashlib
-          import os
-          from pathlib import Path
-
-          root = Path('packages')
-          expected = set()
-          for target_os in ('linux', 'darwin'):
-              for arch in ('amd64', 'arm64'):
-                  name = f"tiup-bench-{os.environ['REL_VER']}-{target_os}-{arch}.tar.gz"
-                  archive = root / name
-                  checksum = root / (name + '.sha256')
-                  expected.update((archive.name, checksum.name))
-                  if archive.is_symlink() or checksum.is_symlink():
-                      raise SystemExit(f'Symlink artifact rejected: {name}')
-                  digest = hashlib.sha256(archive.read_bytes()).hexdigest()
-                  if checksum.read_text() != f'{digest}  {name}\n':
-                      raise SystemExit(f'Checksum mismatch: {name}')
-          if {entry.name for entry in root.iterdir()} != expected:
-              raise SystemExit('Unexpected files in release artifacts')
-          PY
+          shopt -s nullglob dotglob
+          files=(*)
+          [[ ${#files[@]} -eq 8 ]]
+          for target_os in linux darwin; do
+            for arch in amd64 arm64; do
+              archive="tiup-bench-${REL_VER}-${target_os}-${arch}.tar.gz"
+              [[ -f "$archive" && ! -L "$archive" ]]
+              [[ -f "$archive.sha256" && ! -L "$archive.sha256" ]]
+              sha256sum "$archive" | cmp - "$archive.sha256"
+            done
+          done
 
       - name: Install the pinned and verified TiUP publisher
         env:
           TIUP_HOME: ${{ runner.temp }}/tiup-publisher
-          PRODUCTION_MIRROR: ${{ vars.TIUP_PRODUCTION_MIRROR }}
+          TIUP_SERVER_PROD: ${{ secrets.TIUP_SERVER_PROD }}
         run: |
+          [[ -n "$TIUP_SERVER_PROD" ]] || { echo 'TIUP_SERVER_PROD is missing.' >&2; exit 1; }
           umask 077
           mkdir -p "$TIUP_HOME/bin" "$TIUP_HOME/keys"
           archive="$RUNNER_TEMP/tiup-v1.17.1-linux-amd64.tar.gz"
@@ -158,13 +124,12 @@ jobs:
           cp "$TIUP_HOME/trusted-root.json" "$TIUP_HOME/bin/root.json"
           chmod 700 "$TIUP_HOME/bin/tiup"
           # mirror set overwrites bin/root.json, so its input must be a separate file.
-          "$TIUP_HOME/bin/tiup" mirror set "$PRODUCTION_MIRROR" --root "$TIUP_HOME/trusted-root.json"
+          "$TIUP_HOME/bin/tiup" mirror set "$TIUP_SERVER_PROD" --root "$TIUP_HOME/trusted-root.json"
 
       - name: Sign and publish packages sequentially
         env:
           TIUP_HOME: ${{ runner.temp }}/tiup-publisher
-          # This NEW name must exist only as an Environment secret, never at repo/org scope.
-          TIUP_SIGNING_KEY: ${{ secrets.TIUP_PRODUCTION_SIGNING_KEY }}
+          TIUP_SIGNING_KEY: ${{ secrets.TIUP_COMP_KEY_PINGCAP }}
         run: |
           set +x
           umask 077
