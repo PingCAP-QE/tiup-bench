@@ -91,6 +91,6 @@ tools/bin/revive: tools/check/go.mod
 	cd tools/check; \
 	$(GO) build -o ../bin/revive github.com/mgechev/revive
 
-tools/bin/golangci-lint:
-	@# Target: pull in specific version of golangci-lint (v1.42.1)
-	curl -sfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b ./tools/bin v1.49.0
+tools/bin/golangci-lint: tools/check/install-golangci-lint.sh tools/check/golangci-lint.sha256
+	@# Target: install golangci-lint v1.49.0 after verifying its pinned SHA-256
+	bash tools/check/install-golangci-lint.sh ./tools/bin
